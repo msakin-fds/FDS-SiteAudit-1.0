@@ -359,30 +359,28 @@ export default function App() {
       }
 
       addLog("CAPTURING VIRTUAL DOM STATE...");
-      
-      // Temporarily remove overflow to capture full height
-      const parentElement = document.getElementById('audit-report-content');
-      const originalOverflow = parentElement ? parentElement.style.overflow : '';
-      const originalHeight = parentElement ? parentElement.style.height : '';
-      if (parentElement) {
-        parentElement.style.overflow = 'visible';
-        parentElement.style.height = 'auto';
-      }
 
       const canvas = await html2canvas(element, {
         scale: 1.5, // Reduced scale to prevent canvas size limits
         useCORS: true,
         backgroundColor: '#0a0a0a',
         logging: false,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('pdf-export-wrapper');
+          if (clonedElement) {
+            // Force all parent elements to be visible and auto-height in the cloned DOM
+            let curr = clonedElement.parentElement;
+            while (curr && curr !== clonedDoc.body) {
+              curr.style.overflow = 'visible';
+              curr.style.height = 'auto';
+              curr.style.maxHeight = 'none';
+              curr.style.position = 'static';
+              curr.style.transform = 'none';
+              curr = curr.parentElement;
+            }
+          }
+        }
       });
-
-      // Restore original styles
-      if (parentElement) {
-        parentElement.style.overflow = originalOverflow;
-        parentElement.style.height = originalHeight;
-      }
 
       addLog("GENERATING PDF ASSETS...");
       const imgData = canvas.toDataURL('image/jpeg', 0.95); // Use JPEG for smaller file size
@@ -410,7 +408,7 @@ export default function App() {
       heightLeft -= pdfHeight;
 
       // Add subsequent pages if content overflows
-      while (heightLeft > 0) {
+      while (heightLeft > 1) {
         position = heightLeft - scaledHeight;
         pdf.addPage();
         pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, scaledHeight);
@@ -448,6 +446,8 @@ export default function App() {
     setReport(null);
     setLogs([]);
     addLog(`INITIALIZING AUDIT SEQUENCE FOR: ${formattedUrl}`);
+
+    let logInterval: NodeJS.Timeout | undefined;
 
     try {
       addLog("ESTABLISHING SECURE CONNECTION TO GEMINI-3-FLASH...");
@@ -560,7 +560,7 @@ export default function App() {
       ];
 
       let stepIdx = 0;
-      const logInterval = setInterval(() => {
+      logInterval = setInterval(() => {
         if (stepIdx < logSteps.length) {
           addLog(logSteps[stepIdx]);
           stepIdx++;
@@ -586,7 +586,8 @@ export default function App() {
       }
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to generate audit report');
+        const errorMsg = typeof result.error === 'object' ? JSON.stringify(result.error) : result.error;
+        throw new Error(errorMsg || 'Failed to generate audit report');
       }
 
       clearInterval(logInterval);
@@ -598,7 +599,21 @@ export default function App() {
       if (jsonMatch) {
         jsonText = jsonMatch[1];
       }
+      
       const data = JSON.parse(jsonText.trim()) as AuditReport;
+      
+      // Validate critical fields to prevent UI crashes
+      if (typeof data.overallScore !== 'number' || !data.summary || !Array.isArray(data.categories) || !data.technicalSpecs || !data.seoAnalysis || !data.securityHealth || !data.performanceVitals) {
+        throw new Error("The AI returned an incomplete or malformed report. Please try again.");
+      }
+
+      // Ensure all categories have a checks array
+      data.categories.forEach(cat => {
+        if (!Array.isArray(cat.checks)) {
+          cat.checks = [];
+        }
+      });
+
       setReport({
         ...data,
         url: formattedUrl,
@@ -606,6 +621,7 @@ export default function App() {
       });
       addLog("AUDIT SUCCESSFUL. RENDERING DASHBOARD.");
     } catch (err: any) {
+      if (logInterval) clearInterval(logInterval);
       console.error('Audit failed:', err);
       setError(err.message || 'CRITICAL SYSTEM FAILURE: AUDIT ABORTED.');
       addLog("ERROR: AUDIT SEQUENCE TERMINATED UNEXPECTEDLY.");
@@ -832,8 +848,8 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
                         <span className="flex items-center gap-1.5"><RefreshCw className="w-3 h-3" /> Scanned: {new Date(report.timestamp).toLocaleTimeString()}</span>
-                        <span className="flex items-center gap-1.5"><Database className="w-3 h-3" /> Framework: {report.technicalSpecs.framework}</span>
-                        <span className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> Server: {report.technicalSpecs.serverLocation}</span>
+                        <span className="flex items-center gap-1.5"><Database className="w-3 h-3" /> Framework: {report.technicalSpecs?.framework || 'Unknown'}</span>
+                        <span className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> Server: {report.technicalSpecs?.serverLocation || 'Unknown'}</span>
                       </div>
                     </div>
                   </div>
