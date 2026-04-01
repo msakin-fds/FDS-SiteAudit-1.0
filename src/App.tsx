@@ -34,11 +34,11 @@ import {
   Network,
   FileText,
   Printer,
-  Github
+  Github,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { GoogleGenAI } from "@google/genai";
 import { cn } from './lib/utils';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -433,8 +433,6 @@ export default function App() {
     addLog(`INITIALIZING AUDIT SEQUENCE FOR: ${formattedUrl}`);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       addLog("ESTABLISHING SECURE CONNECTION TO GEMINI-3-FLASH...");
       addLog("MOUNTING URL CONTEXT TOOL...");
 
@@ -552,19 +550,27 @@ export default function App() {
         }
       }, 1500);
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          tools: [{ urlContext: {} }],
-          responseMimeType: "application/json",
-        },
+      const response = await fetch('/api/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: formattedUrl, prompt })
       });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to generate audit report');
+      }
 
       clearInterval(logInterval);
       addLog("DATA ACQUISITION COMPLETE. PARSING REPORT...");
 
-      const data = JSON.parse(response.text) as AuditReport;
+      const rawText = result.text || "{}";
+      let jsonText = rawText;
+      const jsonMatch = rawText.match(/```(?:json)?\n([\s\S]*?)\n```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+      const data = JSON.parse(jsonText.trim()) as AuditReport;
       setReport({
         ...data,
         url: formattedUrl,
@@ -726,6 +732,27 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </motion.div>
+            )}
+
+            {error && !isAuditing && (
+              <motion.div 
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex-1 flex flex-col items-center justify-center p-12"
+              >
+                <div className="w-24 h-24 border-2 border-dashed border-red-500/50 rounded-full flex items-center justify-center mb-8 bg-red-500/10">
+                  <AlertTriangle className="w-10 h-10 text-red-500" />
+                </div>
+                <h2 className="text-3xl font-mono font-bold tracking-tighter mb-4 uppercase text-red-500">System Error</h2>
+                <p className="text-zinc-400 font-mono text-sm max-w-md text-center leading-relaxed mb-8">
+                  {error}
+                </p>
+                <button 
+                  onClick={() => setError(null)}
+                  className="px-6 py-3 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs uppercase tracking-widest hover:bg-zinc-800 transition-colors"
+                >
+                  Acknowledge & Reset
+                </button>
               </motion.div>
             )}
 

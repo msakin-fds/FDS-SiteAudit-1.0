@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { GoogleGenAI } from "@google/genai";
 
 function getFiles(dir: string, baseDir: string, fileList: {path: string, content: string}[] = []) {
   const files = fs.readdirSync(dir);
@@ -29,6 +30,35 @@ app.use(express.json({ limit: '50mb' }));
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+app.post("/api/audit", async (req, res) => {
+  const { url, prompt } = req.body;
+  if (!url || !prompt) {
+    return res.status(400).json({ error: "URL and prompt are required" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        tools: [{ urlContext: {} }],
+        responseMimeType: "application/json",
+      },
+    });
+
+    res.json({ text: response.text });
+  } catch (error: any) {
+    console.error("Audit API Error:", error);
+    res.status(500).json({ error: error.message || "Failed to generate audit report" });
+  }
 });
 
 app.get("/api/auth/github/url", (req, res) => {
