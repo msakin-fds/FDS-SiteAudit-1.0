@@ -5,8 +5,7 @@
   "framework": "vite",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "{src/**/*,*.ts,*.json,*.html,*.css,*.md}",
-      "maxDuration": 60
+      "includeFiles": "{src/**/*,*.ts,*.json,*.html,*.css,*.md}"
     }
   },
   "rewrites": [
@@ -17,10 +16,6 @@
     {
       "source": "/callback/?",
       "destination": "/api/index.ts"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
     }
   ]
 }

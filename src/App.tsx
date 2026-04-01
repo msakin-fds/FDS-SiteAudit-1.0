@@ -556,7 +556,18 @@ export default function App() {
         body: JSON.stringify({ url: formattedUrl, prompt })
       });
 
-      const result = await response.json();
+      let result;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        result = await response.json();
+      } else {
+        const text = await response.text();
+        if (response.status === 504) {
+          throw new Error("Vercel Hobby Tier Timeout (10s limit). The audit took too long to generate.");
+        }
+        throw new Error(`Server returned ${response.status}: ${text.slice(0, 100)}`);
+      }
+
       if (!response.ok) {
         throw new Error(result.error || 'Failed to generate audit report');
       }
