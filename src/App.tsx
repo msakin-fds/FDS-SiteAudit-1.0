@@ -352,7 +352,7 @@ export default function App() {
     addLog("INITIALIZING PDF EXPORT ENGINE...");
     
     try {
-      const element = document.getElementById('audit-report-content');
+      const element = document.getElementById('pdf-export-wrapper');
       if (!element) {
         addLog("ERROR: REPORT CONTENT NOT FOUND.");
         return;
@@ -360,28 +360,32 @@ export default function App() {
 
       addLog("CAPTURING VIRTUAL DOM STATE...");
       
-      // We use onclone to modify the element for capture without affecting the UI
+      // Temporarily remove overflow to capture full height
+      const parentElement = document.getElementById('audit-report-content');
+      const originalOverflow = parentElement ? parentElement.style.overflow : '';
+      const originalHeight = parentElement ? parentElement.style.height : '';
+      if (parentElement) {
+        parentElement.style.overflow = 'visible';
+        parentElement.style.height = 'auto';
+      }
+
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 1.5, // Reduced scale to prevent canvas size limits
         useCORS: true,
         backgroundColor: '#0a0a0a',
         logging: false,
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('audit-report-content');
-          if (clonedElement) {
-            clonedElement.style.height = 'auto';
-            clonedElement.style.overflow = 'visible';
-            clonedElement.style.maxHeight = 'none';
-          }
-        }
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
       });
 
+      // Restore original styles
+      if (parentElement) {
+        parentElement.style.overflow = originalOverflow;
+        parentElement.style.height = originalHeight;
+      }
+
       addLog("GENERATING PDF ASSETS...");
-      const imgData = canvas.toDataURL('image/png');
-      
-      // Calculate dimensions to fit A4 or maintain aspect ratio
-      const imgWidth = 595.28; // A4 width in pts
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgData = canvas.toDataURL('image/jpeg', 0.95); // Use JPEG for smaller file size
       
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -389,18 +393,31 @@ export default function App() {
         format: 'a4'
       });
 
-      // If content is longer than one A4 page, we might need multiple pages
-      // But for simplicity and to match user's previous "long" PDF expectation, 
-      // we'll just use a custom format that fits the whole thing or split it.
-      // Let's use a custom format that fits the whole canvas height.
-      const customPdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: [canvas.width, canvas.height]
-      });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      
+      const ratio = pdfWidth / imgWidth;
+      const scaledHeight = imgHeight * ratio;
+      
+      let heightLeft = scaledHeight;
+      let position = 0;
 
-      customPdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      customPdf.save(`FDS-SiteAudit-${report.url.replace(/[^a-z0-9]/gi, '-')}.pdf`);
+      // Add first page
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, scaledHeight);
+      heightLeft -= pdfHeight;
+
+      // Add subsequent pages if content overflows
+      while (heightLeft > 0) {
+        position = heightLeft - scaledHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, scaledHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`FDS-SiteAudit-${report.url.replace(/[^a-z0-9]/gi, '-')}.pdf`);
       
       addLog("PDF EXPORT COMPLETE.");
     } catch (error) {
@@ -872,9 +889,10 @@ export default function App() {
                 </div>
 
                 <div id="audit-report-content" className="flex-1 overflow-y-auto p-6">
-                  {activeTab === 'overview' && (
-                    <div className="max-w-4xl mx-auto space-y-8">
-                      {/* Summary Card */}
+                  <div id="pdf-export-wrapper">
+                    {activeTab === 'overview' && (
+                      <div className="max-w-4xl mx-auto space-y-8">
+                        {/* Summary Card */}
                       <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-4 opacity-10">
                           <Activity className="w-32 h-32" />
@@ -1456,6 +1474,7 @@ export default function App() {
                       <div className="text-emerald-500 mt-8 animate-pulse">_ SCAN COMPLETE. SYSTEM READY.</div>
                     </div>
                   )}
+                  </div>
                 </div>
               </motion.div>
             )}
