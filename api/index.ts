@@ -206,7 +206,7 @@ app.post("/api/github/export", async (req, res) => {
   }
 });
 
-app.get(["/api/auth/github/callback", "/api/auth/github/callback/"], async (req, res) => {
+app.get(["/api/auth/github/callback", "/api/auth/github/callback/", "/callback", "/callback/"], async (req, res) => {
   const { code } = req.query;
   
   if (!code) {
