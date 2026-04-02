@@ -43,21 +43,39 @@ app.post("/api/audit", async (req, res) => {
     return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        tools: [{ urlContext: {} }],
-        responseMimeType: "application/json",
-      },
-    });
+  const ai = new GoogleGenAI({ apiKey });
+  const MAX_RETRIES = 3;
+  let attempt = 0;
+  let delay = 2000;
 
-    res.json({ text: response.text });
-  } catch (error: any) {
-    console.error("Audit API Error:", error);
-    res.status(500).json({ error: error.message || "Failed to generate audit report" });
+  while (attempt < MAX_RETRIES) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          tools: [{ urlContext: {} }],
+          responseMimeType: "application/json",
+        },
+      });
+
+      return res.json({ text: response.text });
+    } catch (error: any) {
+      console.error(`Audit API Error (Attempt ${attempt + 1}/${MAX_RETRIES}):`, error);
+      
+      // Check if it's a rate limit error (429) or a 5xx error
+      const isRateLimit = error.message?.includes('429') || error.status === 429 || error.message?.toLowerCase().includes('quota');
+      const isServerError = error.message?.includes('500') || error.message?.includes('503') || error.status >= 500;
+      
+      if ((isRateLimit || isServerError) && attempt < MAX_RETRIES - 1) {
+        attempt++;
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+      } else {
+        return res.status(500).json({ error: error.message || "Failed to generate audit report after multiple attempts" });
+      }
+    }
   }
 });
 
