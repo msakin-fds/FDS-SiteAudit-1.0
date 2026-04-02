@@ -188,3 +188,67 @@ body {
   pointer-events: none;
   animation: scan 4s linear infinite;
 }
+
+@media print {
+  body {
+    overflow: visible !important;
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  /* Hide UI elements not needed in print */
+  header, aside, .no-print, button {
+    display: none !important;
+  }
+
+  /* Force the main content area to take full width and height */
+  #root, .flex-1, main {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Ensure the report wrapper is visible and styled for print */
+  #pdf-export-wrapper {
+    width: 100% !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* Adjust text colors for better contrast on white paper */
+  .text-white, .text-zinc-200, .text-zinc-300, .text-zinc-400 {
+    color: #111 !important;
+  }
+  
+  .text-zinc-500, .text-zinc-600 {
+    color: #444 !important;
+  }
+
+  /* Adjust backgrounds for print */
+  .bg-zinc-900, .bg-zinc-950, .bg-zinc-800 {
+    background-color: #f8f9fa !important;
+    border-color: #ddd !important;
+  }
+
+  /* Ensure page breaks don't cut off content awkwardly */
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+  
+  /* Expand scrollable areas for print */
+  .max-h-32, .overflow-y-auto {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  /* Force background graphics to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
