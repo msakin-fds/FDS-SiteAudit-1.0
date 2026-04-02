@@ -124,6 +124,7 @@ interface AuditReport {
     malwareStatus: string;
     blacklistStatus: string;
     brokenLinksCount: number;
+    brokenLinks: string[];
     privacyScore: number;
     sslStrength: string;
     firewallPresence: boolean;
@@ -214,9 +215,6 @@ export default function App() {
   const [isSuperUser, setIsSuperUser] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [shareLink, setShareLink] = useState('');
-  const [githubToken, setGithubToken] = useState<string | null>(null);
-  const [githubUser, setGithubUser] = useState<any>(null);
-  const [isExportingRepo, setIsExportingRepo] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -231,90 +229,6 @@ export default function App() {
       }, 500);
     }
   }, []);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Validate origin is from AI Studio preview, localhost, or Vercel deployment
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost') && !origin.endsWith('.vercel.app') && origin !== window.location.origin) {
-        return;
-      }
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data.token) {
-        setGithubToken(event.data.token);
-        addLog("GITHUB OAUTH SUCCESSFUL. TOKEN ACQUIRED.");
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  useEffect(() => {
-    if (githubToken) {
-      fetch('https://api.github.com/user', {
-        headers: {
-          Authorization: `Bearer ${githubToken}`
-        }
-      })
-      .then(res => res.json())
-      .then(data => {
-        setGithubUser(data);
-        addLog(`GITHUB USER CONNECTED: ${data.login}`);
-      })
-      .catch(err => {
-        console.error('Error fetching GitHub user:', err);
-        addLog("ERROR FETCHING GITHUB USER PROFILE.");
-      });
-    }
-  }, [githubToken]);
-
-  const handleConnectGithub = async () => {
-    try {
-      addLog("INITIATING GITHUB OAUTH SEQUENCE...");
-      const redirectUri = `${window.location.origin}/api/auth/github/callback`;
-      const response = await fetch(`/api/auth/github/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
-      if (!response.ok) {
-        throw new Error('Failed to get auth URL');
-      }
-      const { url } = await response.json();
-
-      const authWindow = window.open(
-        url,
-        'oauth_popup',
-        'width=600,height=700'
-      );
-
-      if (!authWindow) {
-        alert('Please allow popups for this site to connect your GitHub account.');
-        addLog("ERROR: POPUP BLOCKED BY BROWSER.");
-      }
-    } catch (error) {
-      console.error('OAuth error:', error);
-      addLog("ERROR: GITHUB OAUTH SEQUENCE FAILED.");
-    }
-  };
-
-  const handleExportRepo = async () => {
-    if (!githubToken) return;
-    setIsExportingRepo(true);
-    addLog("STARTING GITHUB REPOSITORY EXPORT...");
-    try {
-      const res = await fetch('/api/github/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: githubToken, repoName: 'msakin-fds/FDS-SiteAudit-1.0' })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Export failed');
-      addLog(`EXPORT SUCCESSFUL. REPOSITORY CREATED: ${data.url}`);
-      window.open(data.url, '_blank');
-    } catch (err: any) {
-      console.error(err);
-      addLog(`EXPORT ERROR: ${err.message}`);
-      alert(`Export failed: ${err.message}. You may need to reconnect to GitHub to grant repository permissions.`);
-    } finally {
-      setIsExportingRepo(false);
-    }
-  };
 
   const handleShare = async () => {
     if (!report) return;
@@ -352,72 +266,9 @@ export default function App() {
     addLog("INITIALIZING PDF EXPORT ENGINE...");
     
     try {
-      const element = document.getElementById('pdf-export-wrapper');
-      if (!element) {
-        addLog("ERROR: REPORT CONTENT NOT FOUND.");
-        return;
-      }
-
-      addLog("CAPTURING VIRTUAL DOM STATE...");
-
-      const canvas = await html2canvas(element, {
-        scale: 1.5, // Reduced scale to prevent canvas size limits
-        useCORS: true,
-        backgroundColor: '#0a0a0a',
-        logging: false,
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('pdf-export-wrapper');
-          if (clonedElement) {
-            // Force all parent elements to be visible and auto-height in the cloned DOM
-            let curr = clonedElement.parentElement;
-            while (curr && curr !== clonedDoc.body) {
-              curr.style.overflow = 'visible';
-              curr.style.height = 'auto';
-              curr.style.maxHeight = 'none';
-              curr.style.position = 'static';
-              curr.style.transform = 'none';
-              curr = curr.parentElement;
-            }
-          }
-        }
-      });
-
-      addLog("GENERATING PDF ASSETS...");
-      const imgData = canvas.toDataURL('image/jpeg', 0.95); // Use JPEG for smaller file size
-      
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'pt',
-        format: 'a4'
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      
-      const ratio = pdfWidth / imgWidth;
-      const scaledHeight = imgHeight * ratio;
-      
-      let heightLeft = scaledHeight;
-      let position = 0;
-
-      // Add first page
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, scaledHeight);
-      heightLeft -= pdfHeight;
-
-      // Add subsequent pages if content overflows
-      while (heightLeft > 1) {
-        position = heightLeft - scaledHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, scaledHeight);
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`FDS-SiteAudit-${report.url.replace(/[^a-z0-9]/gi, '-')}.pdf`);
-      
-      addLog("PDF EXPORT COMPLETE.");
+      // Use native print functionality which is much more robust
+      window.print();
+      addLog("PDF EXPORT DIALOG OPENED.");
     } catch (error) {
       console.error('PDF Export Error:', error);
       addLog("CRITICAL ERROR DURING PDF EXPORT.");
@@ -506,6 +357,7 @@ export default function App() {
             malwareStatus: string;
             blacklistStatus: string;
             brokenLinksCount: number;
+            brokenLinks: string[];
             privacyScore: number;
             sslStrength: string;
             firewallPresence: boolean;
@@ -541,7 +393,7 @@ export default function App() {
 
         Specific checks required for each category:
         - SEO: Analyze URL, Canonical, Title, Meta Description, Headings (H1-H6 count), Image Alt tags (total vs missing), HTML to Text ratio, presence of Frames or Flash, Micro-formats, Schema.org data, Open Graph tags, Twitter Cards, Meta Viewport, Robots.txt, XML Sitemaps, Language, Doctype, Encoding, Google Analytics presence, and Favicon.
-        - Security & Privacy: Malware scan status, Blacklist check (Google Safe Browsing, etc.), SSL/HTTPS strength, HSTS, CSP, X-Frame-Options, Sensitive data in JS, Outdated libraries, Form security, Privacy Policy presence, GDPR compliance markers, and Firewall/WAF detection.
+        - Security & Privacy: Malware scan status, Blacklist check (Google Safe Browsing, etc.), SSL/HTTPS strength, HSTS, CSP, X-Frame-Options, Sensitive data in JS, Outdated libraries, Form security, Privacy Policy presence, GDPR compliance markers, Firewall/WAF detection, and a list of specific broken links found (if any).
         - UX/UI: Color contrast, Font legibility, Navigation depth, CTA clarity, Whitespace, Layout shifts, Accessibility (ARIA).
         - Performance: Core Web Vitals (TTFB, LCP, CLS, FID, Speed Index), Image optimization, Minification, Compression, Caching, Critical path, Feature functional logic, and Broken links scan.
 
@@ -613,6 +465,11 @@ export default function App() {
           cat.checks = [];
         }
       });
+
+      // Ensure brokenLinks is an array
+      if (!Array.isArray(data.securityHealth.brokenLinks)) {
+        data.securityHealth.brokenLinks = [];
+      }
 
       setReport({
         ...data,
@@ -686,33 +543,6 @@ export default function App() {
             <span className="text-zinc-400 uppercase">Engine:</span>
             <span className="text-white">Gemini-3-Flash</span>
           </div>
-          {githubUser ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-mono">
-                <img src={githubUser.avatar_url} alt="GitHub Avatar" className="w-4 h-4 rounded-full" />
-                <span className="text-white">{githubUser.login}</span>
-                <button onClick={() => { setGithubToken(null); setGithubUser(null); }} className="ml-2 text-zinc-500 hover:text-red-500" title="Disconnect">
-                  <Minus className="w-3 h-3" />
-                </button>
-              </div>
-              <button 
-                onClick={handleExportRepo}
-                disabled={isExportingRepo}
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
-              >
-                {isExportingRepo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Github className="w-3.5 h-3.5" />}
-                {isExportingRepo ? 'Pushing...' : 'Push to GitHub'}
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={handleConnectGithub}
-              className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-mono hover:bg-zinc-800 transition-all text-zinc-300"
-            >
-              <Github className="w-3.5 h-3.5" />
-              Connect GitHub
-            </button>
-          )}
           <Settings className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-white transition-colors" />
         </div>
       </header>
@@ -1159,12 +989,23 @@ export default function App() {
                                 report.securityHealth.blacklistStatus.toLowerCase().includes('clear') ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
                               )}>{report.securityHealth.blacklistStatus}</span>
                             </div>
-                            <div className="flex justify-between text-[10px] font-mono">
-                              <span className="text-zinc-600">Broken Links</span>
-                              <span className={cn(
-                                "px-1 rounded",
-                                report.securityHealth.brokenLinksCount === 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
-                              )}>{report.securityHealth.brokenLinksCount}</span>
+                            <div className="flex flex-col gap-1 text-[10px] font-mono">
+                              <div className="flex justify-between">
+                                <span className="text-zinc-600">Broken Links</span>
+                                <span className={cn(
+                                  "px-1 rounded",
+                                  report.securityHealth.brokenLinksCount === 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+                                )}>{report.securityHealth.brokenLinksCount}</span>
+                              </div>
+                              {report.securityHealth.brokenLinks && report.securityHealth.brokenLinks.length > 0 && (
+                                <div className="mt-2 p-2 bg-zinc-950 rounded border border-zinc-800 max-h-32 overflow-y-auto">
+                                  <ul className="list-disc list-inside text-zinc-400 text-[9px] space-y-1">
+                                    {report.securityHealth.brokenLinks.map((link, i) => (
+                                      <li key={i} className="truncate" title={link}>{link}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
