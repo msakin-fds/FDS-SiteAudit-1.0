@@ -55,7 +55,6 @@ app.post("/api/audit", async (req, res) => {
         contents: prompt,
         config: {
           tools: [{ urlContext: {} }],
-          responseMimeType: "application/json",
         },
       });
 
